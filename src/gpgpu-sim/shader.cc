@@ -52,9 +52,12 @@
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
+// Changes
+// Group 2 COA_LAB 
+// We have declared the variables here and made changes in the shader.h 
+// file to include the variables to be used in gpu-sim.cc to print 
+// the result of all the counters after the kernel execution
 
-// done by Justa
-// declaring variable 
 extern int issue=0;
 extern int waiting=0;
 extern int others=0;
@@ -1179,6 +1182,8 @@ void scheduler_unit::cycle() {
           (*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id());
 
     if(warp(warp_id).ibuffer_empty() || warp(warp_id).waiting()){
+      // Changes
+      // Group 2 COA_LAB 
       others++;
     }
 
@@ -1192,6 +1197,7 @@ void scheduler_unit::cycle() {
         warp(warp_id).m_cdp_latency--;
         break;
       }
+
 
       bool valid = warp(warp_id).ibuffer_next_valid();
       bool warp_inst_issued = false;
@@ -1241,6 +1247,8 @@ void scheduler_unit::cycle() {
                 previous_issued_inst_exec_type = exec_unit_type_t::MEM;
               }
               else{
+                // Changes
+                // Group 2 COA_LAB 
                 Xmem++;
               }
             } else {
@@ -1324,6 +1332,7 @@ void scheduler_unit::cycle() {
                   previous_issued_inst_exec_type = exec_unit_type_t::INT;
                 }
                 else {
+                  // change Group 2
                   Xalu++;
                 }
               } else if ((m_shader->m_config->gpgpu_num_dp_units > 0) &&
@@ -1339,6 +1348,7 @@ void scheduler_unit::cycle() {
                   previous_issued_inst_exec_type = exec_unit_type_t::DP;
                 }
                 else {
+                  // change Group 2
                   Xalu++;
                 }
               }  // If the DP units = 0 (like in Fermi archi), then execute DP
@@ -1357,6 +1367,7 @@ void scheduler_unit::cycle() {
                   previous_issued_inst_exec_type = exec_unit_type_t::SFU;
                 }
                 else {
+                  // change Group 2
                   Xalu++;
                 }
               } else if ((pI->op == TENSOR_CORE_OP) &&
@@ -1371,6 +1382,7 @@ void scheduler_unit::cycle() {
                   previous_issued_inst_exec_type = exec_unit_type_t::TENSOR;
                 }
                 else{
+                  // change Group 2
                   Xalu++;
                 }
               } else if ((pI->op >= SPEC_UNIT_START_ID) &&
@@ -1396,6 +1408,7 @@ void scheduler_unit::cycle() {
                       exec_unit_type_t::SPECIALIZED;
                 }
                 else{
+                  // change Group 2
                   Xalu++;
                 }
               }
@@ -1405,6 +1418,7 @@ void scheduler_unit::cycle() {
             SCHED_DPRINTF(
                 "Warp (warp_id %u, dynamic_warp_id %u) fails scoreboard\n",
                 (*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id());
+            // change Group 2
             waiting++;
           }
         }
@@ -1422,7 +1436,8 @@ void scheduler_unit::cycle() {
             "Warp (warp_id %u, dynamic_warp_id %u) issued %u instructions\n",
             (*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id(), issued);
         do_on_warp_issued(warp_id, issued, iter);
-        // justa 
+        // Changes
+        // Group 2 COA_LAB 
         issue++;
       }
       checked++;
