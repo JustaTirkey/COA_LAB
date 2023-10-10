@@ -16,4 +16,4 @@ nvcc -lcudart needle.cu
 ./a.out 2048 10 
 
 ```
-Refer run file for succesful execution.
+Refer run file for successful execution.
