@@ -71,7 +71,8 @@
 #define WRITE_MASK_SIZE 8
 
 class gpgpu_context;
-// justa tirkey
+
+// 21cs02011 Group 2
 // declaring counters for storing values 
 extern int issue;
 extern int waiting;
