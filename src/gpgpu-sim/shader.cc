@@ -52,17 +52,17 @@
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
-// Changes
-// Group 2 COA_LAB 
-// We have declared the variables here and made changes in the shader.h 
-// file to include the variables to be used in gpu-sim.cc to print 
-// the result of all the counters after the kernel execution
+// justa0
+extern long long int inst_ccount = 0;
+extern long long int extra = 0;
 
-extern int issue=0;
-extern int waiting=0;
-extern int others=0;
-extern int Xalu=0;
-extern int Xmem=0;
+// justa
+std::map<unsigned int, long long int> cta_id_to_prog;
+std::map<unsigned int, unsigned int> warp_id_to_cta_id;
+std::map<int, unsigned int> cta_number_to_m_sid;
+long long int w_icount =0;
+int cta_number = 0;
+int last_cta_issued;
 
 mem_fetch *shader_core_mem_fetch_allocator::alloc(
     new_addr_type addr, mem_access_type type, unsigned size, bool wr,
@@ -1139,6 +1139,9 @@ void scheduler_unit::order_by_priority(
   }
 }
 
+// justa
+int counter_again_cta_number=0;
+int limit =0;
 void scheduler_unit::cycle() {
   SCHED_DPRINTF("scheduler_unit::cycle()\n");
   bool valid_inst =
@@ -1148,10 +1151,39 @@ void scheduler_unit::cycle() {
                              // waiting for pending register writes
   bool issued_inst = false;  // of these we issued one
 
-  order_warps();
+   std::map<unsigned int,bool>Shadercore_done;
+
+   // justa calculating all warp progress and cta progress 
+   for (std::vector<shd_warp_t *>::const_iterator iter =
+          m_next_cycle_prioritized_warps.begin();
+       iter != m_next_cycle_prioritized_warps.end(); iter++){
+
+        shader_core_ctx *core_used = (*iter)->get_shader();
+        if (Shadercore_done.find(core_used->get_shader_id()) == Shadercore_done.end()){
+        Shadercore_done[core_used->get_shader_id()] = true;
+        core_used->calc_all_warp_progress();
+        }
+  }
+
+
+// justa KAWS scheduler or shorting by cta progress every 128 cta means 1 kernel 
+// if(last_cta_issued == cta_number) printf(" %d ", cta_number);
+if(cta_number != 0 && cta_number%last_cta_issued == 0) {
+  std::sort(m_next_cycle_prioritized_warps.begin(), m_next_cycle_prioritized_warps.end(), 
+    [](shd_warp_t* a, shd_warp_t* b) {
+        if (a->cta_progress() != b->cta_progress()) {
+        return a->cta_progress() < b->cta_progress();
+        }
+        return a->get_warp_id() < b->get_warp_id();
+    }); 
+}
+else{
+   order_warps();
+}
   for (std::vector<shd_warp_t *>::const_iterator iter =
            m_next_cycle_prioritized_warps.begin();
        iter != m_next_cycle_prioritized_warps.end(); iter++) {
+
     // Don't consider warps that are not yet valid
     if ((*iter) == NULL || (*iter)->done_exit()) {
       continue;
@@ -1181,12 +1213,6 @@ void scheduler_unit::cycle() {
           "barrier\n",
           (*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id());
 
-    if(warp(warp_id).ibuffer_empty() || warp(warp_id).waiting()){
-      // Changes
-      // Group 2 COA_LAB 
-      others++;
-    }
-
     while (!warp(warp_id).waiting() && !warp(warp_id).ibuffer_empty() &&
            (checked < max_issue) && (checked <= issued) &&
            (issued < max_issue)) {
@@ -1198,10 +1224,10 @@ void scheduler_unit::cycle() {
         break;
       }
 
-
       bool valid = warp(warp_id).ibuffer_next_valid();
       bool warp_inst_issued = false;
       unsigned pc, rpc;
+      int m_id2sh[7];
       m_shader->get_pdom_stack_top_info(warp_id, pI, &pc, &rpc);
       SCHED_DPRINTF(
           "Warp (warp_id %u, dynamic_warp_id %u) has valid instruction (%s)\n",
@@ -1230,44 +1256,38 @@ void scheduler_unit::cycle() {
                 m_shader->get_active_mask(warp_id, pI);
 
             assert(warp(warp_id).inst_in_pipeline());
-
             if ((pI->op == LOAD_OP) || (pI->op == STORE_OP) ||
                 (pI->op == MEMORY_BARRIER_OP) ||
                 (pI->op == TENSOR_CORE_LOAD_OP) ||
                 (pI->op == TENSOR_CORE_STORE_OP)) {
               if (m_mem_out->has_free(m_shader->m_config->sub_core_model,
-                                      m_id) &&
+                                      m_id, &m_id2sh[0]) &&
                   (!diff_exec_units ||
                    previous_issued_inst_exec_type != exec_unit_type_t::MEM)) {
                 m_shader->issue_warp(*m_mem_out, pI, active_mask, warp_id,
-                                     m_id);
+                                     m_id2sh[0]);
                 issued++;
                 issued_inst = true;
                 warp_inst_issued = true;
                 previous_issued_inst_exec_type = exec_unit_type_t::MEM;
               }
-              else{
-                // Changes
-                // Group 2 COA_LAB 
-                Xmem++;
-              }
             } else {
               bool sp_pipe_avail =
                   (m_shader->m_config->gpgpu_num_sp_units > 0) &&
-                  m_sp_out->has_free(m_shader->m_config->sub_core_model, m_id);
+                  m_sp_out->has_free(m_shader->m_config->sub_core_model, m_id, &m_id2sh[1]);
               bool sfu_pipe_avail =
                   (m_shader->m_config->gpgpu_num_sfu_units > 0) &&
-                  m_sfu_out->has_free(m_shader->m_config->sub_core_model, m_id);
+                  m_sfu_out->has_free(m_shader->m_config->sub_core_model, m_id, &m_id2sh[2]);
               bool tensor_core_pipe_avail =
                   (m_shader->m_config->gpgpu_num_tensor_core_units > 0) &&
                   m_tensor_core_out->has_free(
-                      m_shader->m_config->sub_core_model, m_id);
+                      m_shader->m_config->sub_core_model, m_id, &m_id2sh[3]);
               bool dp_pipe_avail =
                   (m_shader->m_config->gpgpu_num_dp_units > 0) &&
-                  m_dp_out->has_free(m_shader->m_config->sub_core_model, m_id);
+                  m_dp_out->has_free(m_shader->m_config->sub_core_model, m_id, &m_id2sh[4]);
               bool int_pipe_avail =
                   (m_shader->m_config->gpgpu_num_int_units > 0) &&
-                  m_int_out->has_free(m_shader->m_config->sub_core_model, m_id);
+                  m_int_out->has_free(m_shader->m_config->sub_core_model, m_id, &m_id2sh[5]);
 
               // This code need to be refactored
               if (pI->op != TENSOR_CORE_OP && pI->op != SFU_OP &&
@@ -1318,22 +1338,18 @@ void scheduler_unit::cycle() {
 
                 if (execute_on_SP) {
                   m_shader->issue_warp(*m_sp_out, pI, active_mask, warp_id,
-                                       m_id);
+                                        m_id2sh[1]);
                   issued++;
                   issued_inst = true;
                   warp_inst_issued = true;
                   previous_issued_inst_exec_type = exec_unit_type_t::SP;
                 } else if (execute_on_INT) {
                   m_shader->issue_warp(*m_int_out, pI, active_mask, warp_id,
-                                       m_id);
+                                       m_id2sh[5]);
                   issued++;
                   issued_inst = true;
                   warp_inst_issued = true;
                   previous_issued_inst_exec_type = exec_unit_type_t::INT;
-                }
-                else {
-                  // change Group 2
-                  Xalu++;
                 }
               } else if ((m_shader->m_config->gpgpu_num_dp_units > 0) &&
                          (pI->op == DP_OP) &&
@@ -1341,15 +1357,11 @@ void scheduler_unit::cycle() {
                                                   exec_unit_type_t::DP)) {
                 if (dp_pipe_avail) {
                   m_shader->issue_warp(*m_dp_out, pI, active_mask, warp_id,
-                                       m_id);
+                                        m_id2sh[4]);
                   issued++;
                   issued_inst = true;
                   warp_inst_issued = true;
                   previous_issued_inst_exec_type = exec_unit_type_t::DP;
-                }
-                else {
-                  // change Group 2
-                  Xalu++;
                 }
               }  // If the DP units = 0 (like in Fermi archi), then execute DP
                  // inst on SFU unit
@@ -1360,30 +1372,22 @@ void scheduler_unit::cycle() {
                                                 exec_unit_type_t::SFU)) {
                 if (sfu_pipe_avail) {
                   m_shader->issue_warp(*m_sfu_out, pI, active_mask, warp_id,
-                                       m_id);
+                                        m_id2sh[2]);
                   issued++;
                   issued_inst = true;
                   warp_inst_issued = true;
                   previous_issued_inst_exec_type = exec_unit_type_t::SFU;
-                }
-                else {
-                  // change Group 2
-                  Xalu++;
                 }
               } else if ((pI->op == TENSOR_CORE_OP) &&
                          !(diff_exec_units && previous_issued_inst_exec_type ==
                                                   exec_unit_type_t::TENSOR)) {
                 if (tensor_core_pipe_avail) {
                   m_shader->issue_warp(*m_tensor_core_out, pI, active_mask,
-                                       warp_id, m_id);
+                                       warp_id, m_id2sh[3]);
                   issued++;
                   issued_inst = true;
                   warp_inst_issued = true;
                   previous_issued_inst_exec_type = exec_unit_type_t::TENSOR;
-                }
-                else{
-                  // change Group 2
-                  Xalu++;
                 }
               } else if ((pI->op >= SPEC_UNIT_START_ID) &&
                          !(diff_exec_units &&
@@ -1396,20 +1400,16 @@ void scheduler_unit::cycle() {
                     (m_shader->m_config->m_specialized_unit[spec_id].num_units >
                      0) &&
                     spec_reg_set->has_free(m_shader->m_config->sub_core_model,
-                                           m_id);
+                                           m_id, &m_id2sh[6]);
 
                 if (spec_pipe_avail) {
                   m_shader->issue_warp(*spec_reg_set, pI, active_mask, warp_id,
-                                       m_id);
+                                       m_id2sh[6]);
                   issued++;
                   issued_inst = true;
                   warp_inst_issued = true;
                   previous_issued_inst_exec_type =
                       exec_unit_type_t::SPECIALIZED;
-                }
-                else{
-                  // change Group 2
-                  Xalu++;
                 }
               }
 
@@ -1418,8 +1418,6 @@ void scheduler_unit::cycle() {
             SCHED_DPRINTF(
                 "Warp (warp_id %u, dynamic_warp_id %u) fails scoreboard\n",
                 (*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id());
-            // change Group 2
-            waiting++;
           }
         }
       } else if (valid) {
@@ -1436,11 +1434,14 @@ void scheduler_unit::cycle() {
             "Warp (warp_id %u, dynamic_warp_id %u) issued %u instructions\n",
             (*iter)->get_warp_id(), (*iter)->get_dynamic_warp_id(), issued);
         do_on_warp_issued(warp_id, issued, iter);
-        // Changes
-        // Group 2 COA_LAB 
-        issue++;
       }
       checked++;
+      
+      // justa calculate the progress of each warp every cycle
+      w_icount = pI->active_count();
+      (*iter)->warp_prog+=w_icount; // warp progress being update 
+
+
     }
     if (issued) {
       // This might be a bit inefficient, but we need to maintain
@@ -1462,8 +1463,7 @@ void scheduler_unit::cycle() {
       else if (issued > 1)
         m_stats->dual_issue_nums[m_id]++;
       else
-        abort();  // issued should be > 0
-
+        abort();  // issued should be > 0+m
       break;
     }
   }
@@ -1760,6 +1760,7 @@ void ldst_unit::get_L1T_sub_stats(struct cache_sub_stats &css) const {
   if (m_L1T) m_L1T->get_sub_stats(css);
 }
 
+// justa0 should find out what instruction in being complete and when it is called 
 void shader_core_ctx::warp_inst_complete(const warp_inst_t &inst) {
 #if 0
       printf("[warp_inst_complete] uid=%u core=%u warp=%u pc=%#x @ time=%llu \n",
@@ -1779,6 +1780,9 @@ void shader_core_ctx::warp_inst_complete(const warp_inst_t &inst) {
     m_stats->m_num_sim_insn[m_sid] += inst.active_count();
 
   m_stats->m_num_sim_winsn[m_sid]++;
+  // justa0 for instruction count 
+  inst_ccount++;
+  extra += inst.active_count();
   m_gpu->gpu_sim_insn += inst.active_count();
   inst.completed(m_gpu->gpu_tot_sim_cycle + m_gpu->gpu_sim_cycle);
 }
@@ -2599,8 +2603,9 @@ inst->space.get_type() != shared_space) { unsigned warp_id = inst->warp_id();
 */
 void ldst_unit::cycle() {
   writeback();
+  // back tracking 2 here the steps was called justa2 after writeback
   for (int i = 0; i < m_config->reg_file_port_throughput; ++i)
-    m_operand_collector->step();
+    m_operand_collector->step(); // this ocu is for load and store operations, so we model operand collection as a separate pipeline stage justa2
   for (unsigned stage = 0; (stage + 1) < m_pipeline_depth; stage++)
     if (m_pipeline_reg[stage]->empty() && !m_pipeline_reg[stage + 1]->empty())
       move_warp(m_pipeline_reg[stage], m_pipeline_reg[stage + 1]);
@@ -3276,12 +3281,12 @@ unsigned int shader_core_config::max_cta(const kernel_info_t &k) const {
   result = gs_min2(result, result_shmem);
   result = gs_min2(result, result_regs);
   result = gs_min2(result, result_cta);
-
+  last_cta_issued = k.num_blocks();
   static const struct gpgpu_ptx_sim_info *last_kinfo = NULL;
   if (last_kinfo !=
       kernel_info) {  // Only print out stats if kernel_info struct changes
     last_kinfo = kernel_info;
-    printf("GPGPU-Sim uArch: CTA/core = %u, limited by:", result);
+    printf("GPGPU-Sim uArch: CTA/core = %u, limited by: %u , %d ", result , num_shader(), last_cta_issued);
     if (result == result_thread) printf(" threads");
     if (result == result_shmem) printf(" shmem");
     if (result == result_regs) printf(" regs");
@@ -3289,6 +3294,7 @@ unsigned int shader_core_config::max_cta(const kernel_info_t &k) const {
     printf("\n");
   }
 
+  // last_cta_issued = result * MAX_CTA_PER_SHADER;
   // gpu_max_cta_per_shader is limited by number of CTAs if not enough to keep
   // all cores busy
   if (k.num_blocks() < result * num_shader()) {
@@ -3408,7 +3414,7 @@ void shader_core_ctx::cycle() {
   m_stats->shader_cycles[m_sid]++;
   writeback();
   execute();
-  read_operands();
+  read_operands(); // new instruction source operand 
   issue();
   for (int i = 0; i < m_config->inst_fetch_throughput; ++i) {
     decode();
@@ -4015,6 +4021,7 @@ void opndcoll_rfu_t::dispatch_ready_cu() {
   }
 }
 
+// justa2 found this
 void opndcoll_rfu_t::allocate_cu(unsigned port_num) {
   input_port_t &inp = m_in_ports[port_num];
   for (unsigned i = 0; i < inp.m_in.size(); i++) {
@@ -4268,6 +4275,12 @@ unsigned simt_core_cluster::issue_block2core() {
         //            m_config->max_cta(*kernel)) ) {
         m_core[core]->can_issue_1block(*kernel)) {
       m_core[core]->issue_block2core(*kernel);
+
+      // justa
+      cta_number++;
+      cta_number_to_m_sid[cta_number]=m_core[core]->get_shader_id();
+      // printf("\nCTA %d issued to shader core id %d %d \n",cta_number,cta_number_to_m_sid[cta_number] , last_cta_issued);
+
       num_blocks_issued++;
       m_cta_issue_next_core = core;
       break;

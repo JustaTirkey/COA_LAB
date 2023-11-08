@@ -40,9 +40,7 @@
 #include "cacti/arbiter.h"
 #include "cacti/basic_circuit.h"
 #include "cacti/parameter.h"
-// #include "arch_const.h"
 #include "const.h"
-// #include "iocontrollers.h"
 #include "io.h"
 #include "logic.h"
 

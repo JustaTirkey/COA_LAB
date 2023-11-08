@@ -1104,7 +1104,7 @@ class warp_inst_t : public inst_t {
       fprintf(fp, "%c", ((m_warp_active_mask[i]) ? '1' : '0'));
   }
   bool active(unsigned thread) const { return m_warp_active_mask.test(thread); }
-  unsigned active_count() const { return m_warp_active_mask.count(); }
+  unsigned active_count() const { return m_warp_active_mask.count(); } // this gives the number of active used to calculate the instruction count per warp justa0 
   unsigned issued_count() const {
     assert(m_empty == false);
     return m_warp_issued_mask.count();
@@ -1299,14 +1299,23 @@ class register_set {
     }
     return false;
   }
-  bool has_free(bool sub_core_model, unsigned reg_id) {
+  bool has_free(bool sub_core_model, unsigned reg_id,int *shared_sched_id) {
     // in subcore model, each sched has a one specific reg to use (based on
     // sched id)
     if (!sub_core_model) return has_free();
 
     assert(reg_id < regs.size());
-    return regs[reg_id]->empty();
+     // WARP SHARING MECHANISM
+    unsigned int reg_size=regs.size();
+    for(unsigned int i=0;i<reg_size;i++){
+      if(regs[(reg_id+i)%reg_size]->empty()){
+        *shared_sched_id=(reg_id+i)%reg_size;
+        return true;
+      }
+    }
+    return false;
   }
+
   bool has_ready() {
     for (unsigned i = 0; i < regs.size(); i++) {
       if (not regs[i]->empty()) {

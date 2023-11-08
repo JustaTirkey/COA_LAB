@@ -553,9 +553,9 @@ void gpgpu_sim_config::reg_options(option_parser_t opp) {
   m_shader_config.reg_options(opp);
   m_memory_config.reg_options(opp);
   power_config::reg_options(opp);
-  // gpu_max_cycle_opt=int(4); // Justa added 
+  // justa change the number of cycle so that it will terminated prematurely  
   option_parser_register(opp, "-gpgpu_max_cycle", OPT_INT64, &gpu_max_cycle_opt,
-                         "terminates gpu simulation early (0 = no limit) ", "40000");
+                         "terminates gpu simulation early (0 = no limit)", "0");
   option_parser_register(opp, "-gpgpu_max_insn", OPT_INT64, &gpu_max_insn_opt,
                          "terminates gpu simulation early (0 = no limit)", "0");
   option_parser_register(opp, "-gpgpu_max_cta", OPT_INT32, &gpu_max_cta_opt,
@@ -1060,18 +1060,6 @@ void gpgpu_sim::update_stats() {
 }
 
 void gpgpu_sim::print_stats() {
-//   extern int issue;
-// extern int waiting;
-// extern int others;
-// extern int Xalu;
-// extern int Xmem;
-
-  printf("\nIssued = %d", issue);
-  printf("\nwaiting = %d", waiting);
-  printf("\nXalu = %d", Xalu);
-  printf("\nXmem = %d", Xmem);
-  printf("\nOthers = %d\n", others);
-
   gpgpu_ctx->stats->ptx_file_line_stats_write_file();
   gpu_print_stat();
 
@@ -1250,6 +1238,9 @@ void gpgpu_sim::gpu_print_stat() {
   std::string kernel_info_str = executed_kernel_info_string();
   fprintf(statfout, "%s", kernel_info_str.c_str());
 
+  // justa0 lets see the difference 
+  printf("counter I implemented = %lld\n", inst_ccount);
+  printf("extra I implemented = %lld\n", extra);
   printf("gpu_sim_cycle = %lld\n", gpu_sim_cycle);
   printf("gpu_sim_insn = %lld\n", gpu_sim_insn);
   printf("gpu_ipc = %12.4f\n", (float)gpu_sim_insn / gpu_sim_cycle);
@@ -1866,6 +1857,7 @@ void gpgpu_sim::cycle() {
         ((gpu_sim_cycle + gpu_tot_sim_cycle) >= g_single_step)) {
       raise(SIGTRAP);  // Debug breakpoint
     }
+    // justa0 instruction is added why ?
     gpu_sim_cycle++;
 
     if (g_interactive_debugger_enabled) gpgpu_debug();

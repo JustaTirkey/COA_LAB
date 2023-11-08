@@ -69,16 +69,11 @@
 #define WRITE_PACKET_SIZE 8
 
 #define WRITE_MASK_SIZE 8
+// justa0
+extern long long int inst_ccount ;
+extern long long int extra;
 
 class gpgpu_context;
-
-// 21cs02011 Group 2
-// declaring counters for storing values 
-extern int issue;
-extern int waiting;
-extern int others;
-extern int Xalu;
-extern int Xmem;
 
 enum exec_unit_type_t {
   NONE = 0,
@@ -107,10 +102,23 @@ class thread_ctx_t {
 
 class shd_warp_t {
  public:
+  //  justa added two variables to store warp progress and cta progress
+  long long int warp_prog;
+  long long int cta_prog;
+  long long int warp_progress(){
+    return warp_prog; // return the instruction count that has completed
+  }
+  long long int cta_progress(){
+    return cta_prog; // return the instruction count that has completed
+  }
+
+
   shd_warp_t(class shader_core_ctx *shader, unsigned warp_size)
       : m_shader(shader), m_warp_size(warp_size) {
     m_stores_outstanding = 0;
     m_inst_in_pipeline = 0;
+    warp_prog=0;
+    cta_prog=0;
     reset();
   }
   void reset() {
@@ -241,6 +249,7 @@ class shd_warp_t {
     m_inst_in_pipeline--;
   }
 
+  // justa important this is a warp class which has warp id cta id dynamic warp id and also the shader core class variable which will return the whole shader core 
   unsigned get_cta_id() const { return m_cta_id; }
 
   unsigned get_dynamic_warp_id() const { return m_dynamic_warp_id; }
@@ -585,6 +594,8 @@ class opndcoll_rfu_t {  // operand collector based register file unit
   // modifiers
   bool writeback(warp_inst_t &warp);
 
+  // backtracking the port number to allocate the cu 
+  // this function is called after ldst unit calls for steps
   void step() {
     dispatch_ready_cu();
     allocate_reads();
@@ -1887,13 +1898,32 @@ class shader_core_ctx : public core_t {
                   unsigned shader_id, unsigned tpc_id,
                   const shader_core_config *config,
                   const memory_config *mem_config, shader_core_stats *stats);
-
   // used by simt_core_cluster:
   // modifiers
   void cycle();
   void reinit(unsigned start_thread, unsigned end_thread,
               bool reset_not_completed);
   void issue_block2core(class kernel_info_t &kernel);
+
+  // justa added to calculate the warp progress of entire core 
+  void calc_all_warp_progress(){
+    std::map<unsigned int, long long int> cta_id_to_progress;
+
+     for (std::vector<shd_warp_t*>::iterator it = m_warp.begin(); it != m_warp.end(); ++it){
+      shd_warp_t* warp = *it;
+      auto iterr = cta_id_to_progress.find(warp->get_cta_id());
+      if(iterr!=cta_id_to_progress.end()){
+        cta_id_to_progress[warp->get_cta_id()] += warp->warp_prog;
+      }
+      else
+        cta_id_to_progress[warp->get_cta_id()] = warp->warp_prog;
+     }
+
+     for (std::vector<shd_warp_t*>::iterator it = m_warp.begin(); it != m_warp.end(); ++it){
+      shd_warp_t* warp = *it;
+      warp->cta_prog = cta_id_to_progress[warp->get_cta_id()];
+     }
+  }
 
   void cache_flush();
   void cache_invalidate();
@@ -1907,6 +1937,16 @@ class shader_core_ctx : public core_t {
     //        k->inc_running();
     printf("GPGPU-Sim uArch: Shader %d bind to kernel %u \'%s\'\n", m_sid,
            m_kernel->get_uid(), m_kernel->name().c_str());
+  }
+
+ // justa to get the shader id as it is protected member 
+  unsigned int get_shader_id (){
+    return m_sid;
+  }
+
+ // justa to get the warp info it is protected member 
+  std::vector<shd_warp_t *> get_m_warp(){
+    return m_warp;
   }
 
   // accessors
@@ -2191,6 +2231,7 @@ class shader_core_ctx : public core_t {
   unsigned long long m_last_inst_gpu_sim_cycle;
   unsigned long long m_last_inst_gpu_tot_sim_cycle;
 
+// justa is using this to get the shader id 
   // general information
   unsigned m_sid;  // shader id
   unsigned m_tpc;  // texture processor cluster id (aka, node id when using
@@ -2221,7 +2262,7 @@ class shader_core_ctx : public core_t {
   read_only_cache *m_L1I;  // instruction cache
   int m_last_warp_fetched;
 
-  // decode/dispatch
+  // decode/dispatch justa core also has its array of warps seeee 
   std::vector<shd_warp_t *> m_warp;  // per warp information array
   barrier_set_t m_barriers;
   ifetch_buffer_t m_inst_fetch_buffer;
