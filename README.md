@@ -59,3 +59,13 @@ Refer run file for successful execution.
 | HS         | KAWS           | 407784         | 18005   | 139395           |
 |            | gto            | 400321         | 17869   | 147123           |
 |            | lrr            | 682462         | 19074   | 319408           |
+
+# Graphs end sem 
+![image](https://github.com/JustaTirkey/COA_LAB/assets/99267141/391d31c5-095f-405d-b94b-8f8ed76aa3f6)
+
+![image](https://github.com/JustaTirkey/COA_LAB/assets/99267141/9a0842a5-c48a-4181-9d0e-85fa7b9852a7)
+
+![image](https://github.com/JustaTirkey/COA_LAB/assets/99267141/605156a7-cd44-47a6-8d21-4e703db8af3f)
+
+
+
