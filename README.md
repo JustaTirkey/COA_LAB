@@ -13,7 +13,7 @@ This is my mid sem project done in my third year of Dual degree(B.Tech and M.Tec
 In this project we need to modify the GPGPU-sim source code to introduce the counters which would capture the states of wraps for a particular application. Then we need to plot the graph for warp state breakdown corresponding to different applications.  
 
 ## Steps to run the code 
-Assuming that gpgpu-sim_distribution is already build in your system.To run the applictaion and check for the states of the warps, run the following commands from the home directory of the codes.
+Assuming that gpgpu-sim_distribution is already build in your system.To run the applictaion and check for the states of the wraps, run the following commands from the home directory of the codes.
 
 ```
 cp -r ~/gpgpu-sim_distribution/configs/tested-cfgs/SM2_GTX480/* ./ 
